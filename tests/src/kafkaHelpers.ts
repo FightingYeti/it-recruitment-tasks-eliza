@@ -140,15 +140,16 @@ export async function waitForMessage(
   return new Promise((resolve, reject) => {
     let settled = false;
 
-    const finish = async (result: unknown) => {
+    const finish = (result: unknown) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try {
-        await consumer.disconnect();
-      } finally {
-        resolve(result);
-      }
+      setImmediate(() => {
+        consumer
+          .disconnect()
+          .catch(() => {})
+          .finally(() => resolve(result));
+      });
     };
 
     const timer = setTimeout(() => {
@@ -161,12 +162,69 @@ export async function waitForMessage(
           if (settled) return;
           const parsed = tryParse(message.value);
           if (parsed !== null && matchFn(parsed)) {
-            await finish(parsed);
+            finish(parsed);
           }
         },
       })
       .catch((err) => {
+        settled = true;
         clearTimeout(timer);
+        consumer.disconnect().catch(() => {});
+        reject(err);
+      });
+  });
+}
+/**
+ * Czeka aż w danym topicu pojawi się wiadomość z danym kluczem.
+ * Zwraca sparsowaną wiadomość albo null, jeśli nie znaleziono w limicie czasu.
+ */
+export async function waitForMessageWithKey(
+  topic: string,
+  key: string,
+  timeoutSeconds: number = DEFAULT_POLL_TIMEOUT_SECONDS
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | null> {
+  const consumer = newConsumer();
+  await consumer.connect();
+  await consumer.subscribe({ topic, fromBeginning: true });
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = (result: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      setImmediate(() => {
+        consumer
+          .disconnect()
+          .catch(() => {})
+          .finally(() => resolve(result));
+      });
+    };
+
+    const timer = setTimeout(() => {
+      void finish(null);
+    }, timeoutSeconds * 1000);
+    
+    const keyBuffer = Buffer.from(key, "utf8");
+
+    consumer
+      .run({
+        eachMessage: async ({ message }: EachMessagePayload) => {
+          if (settled) return;
+          if (!message.key || !message.key.equals(keyBuffer)) return;
+
+          const parsed = tryParse(message.value);
+          if (parsed !== null && message.key.toString() === key) {
+            finish(parsed);
+          }
+        },
+      })
+      .catch((err) => {
+        settled = true;
+        clearTimeout(timer);
+        consumer.disconnect().catch(() => {});
         reject(err);
       });
   });
@@ -190,15 +248,16 @@ export async function collectMessages(
   return new Promise((resolve, reject) => {
     let settled = false;
 
-    const finish = async () => {
+    const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try {
-        await consumer.disconnect();
-      } finally {
-        resolve(found);
-      }
+      setImmediate(() => {
+        consumer
+          .disconnect()
+          .catch(() => {})
+          .finally(() => resolve(found));
+      });
     };
 
     const timer = setTimeout(() => {
@@ -213,13 +272,15 @@ export async function collectMessages(
           if (parsed !== null && matchFn(parsed)) {
             found.push(parsed);
             if (found.length >= expectedCount) {
-              await finish();
+              finish();
             }
           }
         },
       })
       .catch((err) => {
+        settled = true;
         clearTimeout(timer);
+        consumer.disconnect().catch(() => {});
         reject(err);
       });
   });

@@ -1,0 +1,7 @@
+{
+  "jest.nodeEnv": {
+    "KAFKA_BOOTSTRAP_SERVERS": "localhost:9094"
+  },
+  "jest.rootPath": "tests",
+  "jest.runMode": "on-demand",
+}
